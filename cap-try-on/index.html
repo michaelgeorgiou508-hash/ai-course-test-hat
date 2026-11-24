@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cap Try-On</title>
+<style>
+  :root {
+    --flare: #FF6A13;
+    --warm-black: #0B0907;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--warm-black);
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 60px;
+  }
+  header {
+    text-align: center;
+    margin-bottom: 24px;
+  }
+  header h1 {
+    font-size: 1.6rem;
+    margin: 0 0 4px;
+    letter-spacing: 0.02em;
+  }
+  header p {
+    margin: 0;
+    color: #9a9a9a;
+    font-size: 0.9rem;
+  }
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: #16120f;
+    border: 1px solid #2a221b;
+    border-radius: 16px;
+    padding: 20px;
+  }
+  .upload-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .upload-slot label {
+    display: block;
+    font-size: 0.8rem;
+    color: #9a9a9a;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .drop-zone {
+    border: 2px dashed #3a3029;
+    border-radius: 12px;
+    padding: 28px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .drop-zone:hover, .drop-zone.drag {
+    border-color: var(--flare);
+    background: rgba(255, 106, 19, 0.06);
+  }
+  .drop-zone input { display: none; }
+  .drop-zone p {
+    margin: 0;
+    color: #9a9a9a;
+    font-size: 0.9rem;
+  }
+  .preview-wrap {
+    margin-top: 16px;
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+    background: #000;
+    min-height: 0;
+  }
+  .preview-wrap img {
+    width: 100%;
+    display: block;
+  }
+  button {
+    width: 100%;
+    margin-top: 16px;
+    padding: 14px;
+    border: none;
+    border-radius: 999px;
+    background: var(--flare);
+    color: var(--warm-black);
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: transform 0.1s ease, opacity 0.15s ease;
+  }
+  button:active { transform: scale(0.98); }
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .status {
+    margin-top: 12px;
+    text-align: center;
+    font-size: 0.85rem;
+    color: #9a9a9a;
+    min-height: 1.2em;
+  }
+  .status.error { color: #ff6666; }
+  .spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255,255,255,0.25);
+    border-top-color: var(--flare);
+    border-radius: 50%;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 8px;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .result-card {
+    width: 100%;
+    max-width: 420px;
+    margin-top: 20px;
+  }
+  .result-card h2 {
+    font-size: 1rem;
+    margin: 0 0 10px;
+    color: #9a9a9a;
+    font-weight: 600;
+  }
+  footer {
+    margin-top: 30px;
+    font-size: 0.75rem;
+    color: #5a5a5a;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>👑 Cap Try-On</h1>
+    <p>Upload a photo of yourself and a photo of the cap — built for the AI course demo.</p>
+  </header>
+
+  <div class="card">
+    <div class="upload-row">
+      <div class="upload-slot">
+        <label for="selfieInput">Your photo</label>
+        <label class="drop-zone" id="selfieZone">
+          <input type="file" id="selfieInput" accept="image/*" capture="user" />
+          <p id="selfieText">Tap to upload</p>
+        </label>
+        <div class="preview-wrap" id="selfiePreviewWrap" style="display:none;">
+          <img id="selfiePreviewImg" alt="Your photo" />
+        </div>
+      </div>
+
+      <div class="upload-slot">
+        <label for="capInput">Cap you like</label>
+        <label class="drop-zone" id="capZone">
+          <input type="file" id="capInput" accept="image/*" />
+          <p id="capText">Tap to upload</p>
+        </label>
+        <div class="preview-wrap" id="capPreviewWrap" style="display:none;">
+          <img id="capPreviewImg" alt="Cap" />
+        </div>
+      </div>
+    </div>
+
+    <button id="submitBtn" disabled>Try On Cap</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="result-card" id="resultCard" style="display:none;">
+    <h2>Result</h2>
+    <div class="preview-wrap">
+      <img id="resultImg" alt="You wearing a cap" />
+    </div>
+  </div>
+
+  <footer>Powered by an n8n workflow · AI course demo</footer>
+
+  <script src="config.js"></script>
+  <script>
+    const WEBHOOK_URL = window.CAP_TRY_ON_CONFIG?.WEBHOOK_URL;
+    if (!WEBHOOK_URL) {
+      throw new Error("Missing config.js — copy config.example.js to config.js and set WEBHOOK_URL.");
+    }
+
+    const submitBtn = document.getElementById("submitBtn");
+    const statusEl = document.getElementById("status");
+    const resultCard = document.getElementById("resultCard");
+    const resultImg = document.getElementById("resultImg");
+
+    let selfieFile = null;
+    let capFile = null;
+
+    function wireUploadSlot({ zoneId, inputId, textId, previewWrapId, previewImgId, onFile }) {
+      const zone = document.getElementById(zoneId);
+      const input = document.getElementById(inputId);
+      const text = document.getElementById(textId);
+      const previewWrap = document.getElementById(previewWrapId);
+      const previewImg = document.getElementById(previewImgId);
+
+      function handleFile(file) {
+        onFile(file);
+        const url = URL.createObjectURL(file);
+        previewImg.src = url;
+        previewWrap.style.display = "block";
+        text.textContent = file.name;
+        resultCard.style.display = "none";
+        setStatus("");
+        updateSubmitState();
+      }
+
+      input.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (file) handleFile(file);
+      });
+
+      ["dragover", "dragenter"].forEach((evt) =>
+        zone.addEventListener(evt, (e) => {
+          e.preventDefault();
+          zone.classList.add("drag");
+        })
+      );
+      ["dragleave", "drop"].forEach((evt) =>
+        zone.addEventListener(evt, (e) => {
+          e.preventDefault();
+          zone.classList.remove("drag");
+        })
+      );
+      zone.addEventListener("drop", (e) => {
+        const file = e.dataTransfer.files[0];
+        if (file) handleFile(file);
+      });
+    }
+
+    function updateSubmitState() {
+      submitBtn.disabled = !(selfieFile && capFile);
+    }
+
+    wireUploadSlot({
+      zoneId: "selfieZone",
+      inputId: "selfieInput",
+      textId: "selfieText",
+      previewWrapId: "selfiePreviewWrap",
+      previewImgId: "selfiePreviewImg",
+      onFile: (file) => (selfieFile = file),
+    });
+
+    wireUploadSlot({
+      zoneId: "capZone",
+      inputId: "capInput",
+      textId: "capText",
+      previewWrapId: "capPreviewWrap",
+      previewImgId: "capPreviewImg",
+      onFile: (file) => (capFile = file),
+    });
+
+    function setStatus(msg, isError) {
+      statusEl.textContent = msg;
+      statusEl.className = "status" + (isError ? " error" : "");
+    }
+
+    submitBtn.addEventListener("click", async () => {
+      if (!selfieFile || !capFile) return;
+      submitBtn.disabled = true;
+      setStatus("");
+      statusEl.innerHTML = '<span class="spinner"></span>Generating your cap look…';
+
+      try {
+        const formData = new FormData();
+        formData.append("selfie", selfieFile, selfieFile.name);
+        formData.append("cap", capFile, capFile.name);
+        formData.append("image", selfieFile, selfieFile.name);
+        formData.append("data", selfieFile, selfieFile.name);
+
+        const res = await fetch(WEBHOOK_URL, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!res.ok) {
+          throw new Error(`Workflow returned ${res.status}`);
+        }
+
+        const contentType = res.headers.get("content-type") || "";
+        let imageUrl = null;
+
+        if (contentType.includes("application/json")) {
+          const json = await res.json();
+          imageUrl = extractImageFromJson(json);
+          if (!imageUrl) {
+            throw new Error("No image found in the response.");
+          }
+        } else if (contentType.includes("image/")) {
+          const blob = await res.blob();
+          imageUrl = URL.createObjectURL(blob);
+        } else {
+          const text = await res.text();
+          imageUrl = extractImageFromText(text);
+          if (!imageUrl) {
+            throw new Error("Unexpected response from workflow.");
+          }
+        }
+
+        resultImg.src = imageUrl;
+        resultCard.style.display = "block";
+        setStatus("Done!");
+        resultCard.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (err) {
+        console.error(err);
+        setStatus(err.message || "Something went wrong. Try again.", true);
+      } finally {
+        updateSubmitState();
+      }
+    });
+
+    function extractImageFromJson(json) {
+      const node = Array.isArray(json) ? json[0] : json;
+      if (!node) return null;
+      const candidates = [
+        node.image,
+        node.imageUrl,
+        node.image_url,
+        node.url,
+        node.output,
+        node.data,
+        node.result,
+      ];
+      for (const c of candidates) {
+        if (typeof c === "string" && c.length > 0) {
+          return normalizeImageString(c);
+        }
+      }
+      return null;
+    }
+
+    function extractImageFromText(text) {
+      const trimmed = text.trim();
+      if (!trimmed) return null;
+      return normalizeImageString(trimmed);
+    }
+
+    function normalizeImageString(str) {
+      if (str.startsWith("http") || str.startsWith("data:image")) return str;
+      if (/^[A-Za-z0-9+/=]+$/.test(str.slice(0, 50))) {
+        return `data:image/png;base64,${str}`;
+      }
+      return str;
+    }
+  </script>
+</body>
+</html>

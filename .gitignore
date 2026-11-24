@@ -1,0 +1,4 @@
+.DS_Store
+cap-try-on/config.js
+cap-try-on/.env
+node_modules/
