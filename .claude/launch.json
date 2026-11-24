@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "cap-try-on",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "http-server", "cap-try-on", "-p", "8532"],
+      "port": 8532
+    }
+  ]
+}

@@ -136,6 +136,55 @@
     color: #9a9a9a;
     font-weight: 600;
   }
+  .auth-card input {
+    width: 100%;
+    padding: 12px 14px;
+    margin-top: 10px;
+    border-radius: 10px;
+    border: 1px solid #3a3029;
+    background: #0e0b09;
+    color: #fff;
+    font-size: 0.95rem;
+  }
+  .auth-card input:focus {
+    outline: none;
+    border-color: var(--flare);
+  }
+  .auth-toggle {
+    margin-top: 14px;
+    text-align: center;
+    font-size: 0.85rem;
+    color: #9a9a9a;
+  }
+  .auth-toggle button {
+    width: auto;
+    display: inline;
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--flare);
+    font-weight: 600;
+    font-size: inherit;
+    cursor: pointer;
+  }
+  .topbar {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: -8px;
+  }
+  .topbar button {
+    width: auto;
+    margin: 0;
+    padding: 6px 14px;
+    background: transparent;
+    border: 1px solid #3a3029;
+    color: #9a9a9a;
+    font-weight: 600;
+    font-size: 0.8rem;
+  }
   footer {
     margin-top: 30px;
     font-size: 0.75rem;
@@ -150,7 +199,25 @@
     <p>Upload a photo of yourself and a photo of the cap — built for the AI course demo.</p>
   </header>
 
-  <div class="card">
+  <div class="topbar" id="topbar" style="display:none;">
+    <button id="logoutBtn">Log out</button>
+  </div>
+
+  <div class="card auth-card" id="authCard">
+    <h2 id="authTitle" style="margin:0 0 4px;font-size:1rem;">Log in</h2>
+    <p style="margin:0;color:#9a9a9a;font-size:0.85rem;">Sign in to try on caps.</p>
+    <input type="text" id="authName" placeholder="Name" style="display:none;" autocomplete="name" />
+    <input type="email" id="authEmail" placeholder="Email" autocomplete="email" />
+    <input type="password" id="authPassword" placeholder="Password" autocomplete="current-password" />
+    <button id="authSubmitBtn">Log in</button>
+    <div class="status" id="authStatus"></div>
+    <div class="auth-toggle">
+      <span id="authToggleText">Don't have an account?</span>
+      <button id="authToggleBtn">Sign up</button>
+    </div>
+  </div>
+
+  <div class="card" id="appCard" style="display:none;">
     <div class="upload-row">
       <div class="upload-slot">
         <label for="selfieInput">Your photo</label>
@@ -189,12 +256,112 @@
   <footer>Powered by an n8n workflow · AI course demo</footer>
 
   <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   <script>
     const WEBHOOK_URL = window.CAP_TRY_ON_CONFIG?.WEBHOOK_URL;
-    if (!WEBHOOK_URL) {
-      throw new Error("Missing config.js — copy config.example.js to config.js and set WEBHOOK_URL.");
+    const SUPABASE_URL = window.CAP_TRY_ON_CONFIG?.SUPABASE_URL;
+    const SUPABASE_ANON_KEY = window.CAP_TRY_ON_CONFIG?.SUPABASE_ANON_KEY;
+    if (!WEBHOOK_URL || !SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      throw new Error("Missing config.js — copy config.example.js to config.js and fill in all values.");
     }
 
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // --- Auth ---
+    const topbar = document.getElementById("topbar");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const authCard = document.getElementById("authCard");
+    const appCard = document.getElementById("appCard");
+    const authTitle = document.getElementById("authTitle");
+    const authNameInput = document.getElementById("authName");
+    const authEmailInput = document.getElementById("authEmail");
+    const authPasswordInput = document.getElementById("authPassword");
+    const authSubmitBtn = document.getElementById("authSubmitBtn");
+    const authStatus = document.getElementById("authStatus");
+    const authToggleText = document.getElementById("authToggleText");
+    const authToggleBtn = document.getElementById("authToggleBtn");
+
+    let mode = "login"; // "login" | "signup"
+
+    function setAuthStatus(msg, isError) {
+      authStatus.textContent = msg;
+      authStatus.className = "status" + (isError ? " error" : "");
+    }
+
+    function showApp() {
+      topbar.style.display = "flex";
+      authCard.style.display = "none";
+      appCard.style.display = "block";
+    }
+
+    function showAuth() {
+      topbar.style.display = "none";
+      authCard.style.display = "block";
+      appCard.style.display = "none";
+      resultCard.style.display = "none";
+    }
+
+    authToggleBtn.addEventListener("click", () => {
+      mode = mode === "login" ? "signup" : "login";
+      const isSignup = mode === "signup";
+      authTitle.textContent = isSignup ? "Sign up" : "Log in";
+      authSubmitBtn.textContent = isSignup ? "Sign up" : "Log in";
+      authNameInput.style.display = isSignup ? "block" : "none";
+      authToggleText.textContent = isSignup ? "Already have an account?" : "Don't have an account?";
+      authToggleBtn.textContent = isSignup ? "Log in" : "Sign up";
+      setAuthStatus("");
+    });
+
+    authSubmitBtn.addEventListener("click", async () => {
+      const email = authEmailInput.value.trim();
+      const password = authPasswordInput.value;
+      const name = authNameInput.value.trim();
+
+      if (!email || !password) {
+        setAuthStatus("Enter an email and password.", true);
+        return;
+      }
+      if (mode === "signup" && !name) {
+        setAuthStatus("Enter your name.", true);
+        return;
+      }
+
+      authSubmitBtn.disabled = true;
+      setAuthStatus(mode === "signup" ? "Signing up…" : "Logging in…");
+
+      try {
+        if (mode === "signup") {
+          const { error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: { data: { name } },
+          });
+          if (error) throw error;
+          setAuthStatus("Check your email to confirm your account, then log in.");
+        } else {
+          const { error } = await supabase.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+        }
+      } catch (err) {
+        setAuthStatus(err.message || "Something went wrong.", true);
+      } finally {
+        authSubmitBtn.disabled = false;
+      }
+    });
+
+    logoutBtn.addEventListener("click", async () => {
+      await supabase.auth.signOut();
+    });
+
+    supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        showApp();
+      } else {
+        showAuth();
+      }
+    });
+
+    // --- Cap try-on tool (unlocked once logged in) ---
     const submitBtn = document.getElementById("submitBtn");
     const statusEl = document.getElementById("status");
     const resultCard = document.getElementById("resultCard");
