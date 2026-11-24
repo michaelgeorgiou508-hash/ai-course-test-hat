@@ -1,0 +1,4 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "cap-try-on"
+}
